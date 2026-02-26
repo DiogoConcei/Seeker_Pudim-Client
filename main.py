@@ -1,63 +1,80 @@
+import cv2
 import asyncio
+import websockets
 import socket
 import time
-
-import cv2
-import websockets
 from zeroconf import Zeroconf, ServiceBrowser
 
 
-class Listener:
+class WebcamListener:
     def __init__(self):
-        self.found_address = None
+        self.found_uri = None
 
     def add_service(self, zc, type_, name):
         info = zc.get_service_info(type_, name)
-
         if info:
             address = socket.inet_ntoa(info.addresses[0])
-            print(f"Servidor encontrado: {address}:{info.port}")
-            self.found_address = f"ws://{address}:{info.port}/ws"
-
-        # Adicione este método para resolver o aviso:
-    def update_service(self, zc, type_, name):
-        # Por enquanto não precisamos fazer nada aqui
-        pass
-
-    def remove_service(self, zc, type_, name):
-        # É boa prática ter este também, caso o servidor caia
-        pass
+            port = info.port
+            self.found_uri = f"ws://{address}:{port}/ws"
 
 
-zeroconf = Zeroconf()
-listener = Listener()
-browser = ServiceBrowser(zeroconf, "_http._tcp.local.", listener)
+async def buscar_servidor():
+    zc = Zeroconf()
+    listener = WebcamListener()
+    browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
 
-while not listener.found_address:
-    time.sleep(0.1)
+    start_time = time.time()
+    while not listener.found_uri and (time.time() - start_time) < 5:
+        await asyncio.sleep(0.1)
 
-# Endereço do seu servidor FastAPI
-uri = listener.found_address
-
-
-async def stream():
-    async with websockets.connect(uri) as websocket:
-        cap = cv2.VideoCapture(0)
-
-        while True:
-            ret, frame = cap.read()
-            if not ret: break
-
-            # Codifica como JPG
-            _, buffer = cv2.imencode('.jpg', frame)
-
-            # Converte o buffer para bytes e envia
-            await websocket.send(buffer.tobytes())
-
-            # Pequena pausa para não atropelar o processador
-            await asyncio.sleep(0.01)
-
-        cap.release()
+    zc.close()  # Fecha o radar após a busca
+    return listener.found_uri
 
 
-asyncio.run(stream())
+async def transmitir_video():
+    tentativas = 0
+    max_tentativas = 3
+
+    while tentativas < max_tentativas:
+        uri = await buscar_servidor()
+
+        if not uri:
+            tentativas += 1
+            print(f"📡 Servidor não encontrado. Tentativa {tentativas}/{max_tentativas}")
+            await asyncio.sleep(2)
+            continue
+
+        try:
+            print(f"🔗 Conectando ao servidor em: {uri}")
+            async with websockets.connect(uri) as websocket:
+                tentativas = 0
+                cap = cv2.VideoCapture(0)
+
+                print("🎥 Streaming iniciado! Pressione 'q' no servidor para encerrar.")
+
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret: break
+
+                    # Codificação JPEG 📦
+                    _, buffer = cv2.imencode('.jpg', frame)
+                    await websocket.send(buffer.tobytes())
+
+                    # Controle de fluidez
+                    await asyncio.sleep(0.01)
+
+                cap.release()
+
+        except Exception as e:
+            tentativas += 1
+            print(f"⚠️ Conexão perdida: {e}. Tentando reconectar ({tentativas}/{max_tentativas})...")
+            await asyncio.sleep(3)
+
+    print("❌ Falha crítica: O servidor não pôde ser alcançado.")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(transmitir_video())
+    except KeyboardInterrupt:
+        print("\nCliente encerrado pelo usuário.")
