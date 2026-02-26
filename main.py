@@ -1,9 +1,11 @@
-import cv2
 import asyncio
-import websockets
-from zeroconf import Zeroconf, ServiceBrowser
 import socket
 import time
+
+import cv2
+import websockets
+from zeroconf import Zeroconf, ServiceBrowser
+
 
 class Listener:
     def __init__(self):
@@ -17,6 +19,16 @@ class Listener:
             print(f"Servidor encontrado: {address}:{info.port}")
             self.found_address = f"ws://{address}:{info.port}/ws"
 
+        # Adicione este método para resolver o aviso:
+    def update_service(self, zc, type_, name):
+        # Por enquanto não precisamos fazer nada aqui
+        pass
+
+    def remove_service(self, zc, type_, name):
+        # É boa prática ter este também, caso o servidor caia
+        pass
+
+
 zeroconf = Zeroconf()
 listener = Listener()
 browser = ServiceBrowser(zeroconf, "_http._tcp.local.", listener)
@@ -26,6 +38,7 @@ while not listener.found_address:
 
 # Endereço do seu servidor FastAPI
 uri = listener.found_address
+
 
 async def stream():
     async with websockets.connect(uri) as websocket:
