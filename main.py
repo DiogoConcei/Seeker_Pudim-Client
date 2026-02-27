@@ -1,9 +1,12 @@
-import cv2
 import asyncio
-import websockets
 import socket
 import time
+
+import cv2
+import websockets
 from zeroconf import Zeroconf, ServiceBrowser
+
+from camera import CameraThread
 
 
 class WebcamListener:
@@ -17,10 +20,17 @@ class WebcamListener:
             port = info.port
             self.found_uri = f"ws://{address}:{port}/ws"
 
+    def update_service(self, zc, type_, name):
+        pass
+
+    def remove_service(self, zc, type_, name):
+        pass
+
 
 async def buscar_servidor():
     zc = Zeroconf()
     listener = WebcamListener()
+    # Não funciona sem essa linha
     browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
 
     start_time = time.time()
@@ -48,29 +58,26 @@ async def transmitir_video():
             print(f"🔗 Conectando ao servidor em: {uri}")
             async with websockets.connect(uri) as websocket:
                 tentativas = 0
-                cap = cv2.VideoCapture(0)
+
+                cam = CameraThread(0).start()
 
                 print("🎥 Streaming iniciado! Pressione 'q' no servidor para encerrar.")
 
-                while cap.isOpened():
-                    ret, frame = cap.read()
+                while not cam.stopped:
+                    ret, frame = cam.read()
+
                     if not ret: break
 
-                    # Codificação JPEG 📦
                     _, buffer = cv2.imencode('.jpg', frame)
                     await websocket.send(buffer.tobytes())
 
-                    # Controle de fluidez
                     await asyncio.sleep(0.01)
 
-                cap.release()
-
+                cam.release()
         except Exception as e:
             tentativas += 1
             print(f"⚠️ Conexão perdida: {e}. Tentando reconectar ({tentativas}/{max_tentativas})...")
             await asyncio.sleep(3)
-
-    print("❌ Falha crítica: O servidor não pôde ser alcançado.")
 
 
 if __name__ == "__main__":
