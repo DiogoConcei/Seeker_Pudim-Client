@@ -70,18 +70,24 @@ async def transmitir_video():
                 last_send = time.monotonic()
 
                 while not cam.stopped:
-                    ret, frame = cam.read()  # Bloqueia até frame novo (sem duplicatas)
+                    # Se não há frame novo, cede o controle e tenta de novo
+                    if not cam.has_new_frame():
+                        await asyncio.sleep(0.005)
+                        continue
+
+                    ret, frame = cam.read()  # Pega o mais recente (nunca frame antigo)
 
                     if not ret:
                         break
 
-                    # Controle de FPS: descarta o frame se chegou cedo demais
+                    # Controle de FPS: se chegou cedo demais, volta ao loop
+                    # (pode haver frame mais novo disponível no próximo ciclo)
                     now = time.monotonic()
                     elapsed = now - last_send
                     if elapsed < FRAME_INTERVAL:
                         await asyncio.sleep(FRAME_INTERVAL - elapsed)
+                        continue
 
-                    # Codifica com qualidade reduzida
                     _, buffer = cv2.imencode('.jpg', frame, ENCODE_PARAMS)
                     await websocket.send(buffer.tobytes())
                     last_send = time.monotonic()
