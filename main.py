@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 import time
 
@@ -9,9 +10,9 @@ from zeroconf import Zeroconf, ServiceBrowser
 from camera import CameraThread
 
 # ── Configurações centralizadas ──────────────────────────────────────────────
-TARGET_FPS = 15                      # FPS alvo para o streaming
-FRAME_INTERVAL = 1.0 / TARGET_FPS   # Intervalo entre frames (~66ms para 15 FPS)
-JPEG_QUALITY = 60                    # Qualidade JPEG (0-100); 60 é bom custo-benefício
+TARGET_FPS = 15
+FRAME_INTERVAL = 1.0 / TARGET_FPS
+JPEG_QUALITY = 60
 ENCODE_PARAMS = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
 MAX_TENTATIVAS = 3
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,6 +49,62 @@ async def buscar_servidor():
     return listener.found_uri
 
 
+def handle_payload(payload: dict):
+    """
+    Chamado a cada resposta do servidor.
+    Personalize aqui o que fazer com as detecções.
+    """
+    frame_idx = payload.get("frame")
+    infer_ms  = payload.get("infer_time_ms", 0)
+    detections = payload.get("detections", [])
+
+    if detections:
+        print(f"[Frame {frame_idx}] {len(detections)} detecção(ões) | {infer_ms:.1f}ms")
+        for det in detections:
+            print(
+                f"  class={det['class_id']} conf={det['confidence']:.2f} "
+                f"bbox=({det['x1']:.0f},{det['y1']:.0f},{det['x2']:.0f},{det['y2']:.0f})"
+            )
+
+
+async def sender_loop(websocket, cam: CameraThread, stop_event: asyncio.Event):
+    """Captura frames da câmera e envia ao servidor."""
+    last_send = time.monotonic()
+
+    while not cam.stopped and not stop_event.is_set():
+        if not cam.has_new_frame():
+            await asyncio.sleep(0.005)
+            continue
+
+        ret, frame = cam.read()
+        if not ret:
+            break
+
+        now = time.monotonic()
+        elapsed = now - last_send
+        if elapsed < FRAME_INTERVAL:
+            await asyncio.sleep(FRAME_INTERVAL - elapsed)
+            continue
+
+        _, buffer = cv2.imencode('.jpg', frame, ENCODE_PARAMS)
+        await websocket.send(buffer.tobytes())
+        last_send = time.monotonic()
+
+    stop_event.set()
+
+
+async def receiver_loop(websocket, stop_event: asyncio.Event):
+    """Recebe payloads JSON do servidor e os processa."""
+    while not stop_event.is_set():
+        try:
+            message = await websocket.recv()
+            payload = json.loads(message)
+            handle_payload(payload)
+        except Exception:
+            stop_event.set()
+            break
+
+
 async def transmitir_video():
     tentativas = 0
 
@@ -65,32 +122,15 @@ async def transmitir_video():
             async with websockets.connect(uri) as websocket:
                 tentativas = 0
                 cam = CameraThread(src=0, width=640, height=480, fps=TARGET_FPS).start()
-                print("🎥 Streaming iniciado! Pressione 'q' no servidor para encerrar.")
+                print("🎥 Streaming iniciado!")
 
-                last_send = time.monotonic()
+                stop_event = asyncio.Event()
 
-                while not cam.stopped:
-                    # Se não há frame novo, cede o controle e tenta de novo
-                    if not cam.has_new_frame():
-                        await asyncio.sleep(0.005)
-                        continue
-
-                    ret, frame = cam.read()  # Pega o mais recente (nunca frame antigo)
-
-                    if not ret:
-                        break
-
-                    # Controle de FPS: se chegou cedo demais, volta ao loop
-                    # (pode haver frame mais novo disponível no próximo ciclo)
-                    now = time.monotonic()
-                    elapsed = now - last_send
-                    if elapsed < FRAME_INTERVAL:
-                        await asyncio.sleep(FRAME_INTERVAL - elapsed)
-                        continue
-
-                    _, buffer = cv2.imencode('.jpg', frame, ENCODE_PARAMS)
-                    await websocket.send(buffer.tobytes())
-                    last_send = time.monotonic()
+                # Envia frames e recebe payloads em paralelo
+                await asyncio.gather(
+                    sender_loop(websocket, cam, stop_event),
+                    receiver_loop(websocket, stop_event),
+                )
 
                 cam.release()
 
