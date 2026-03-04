@@ -8,6 +8,14 @@ from zeroconf import Zeroconf, ServiceBrowser
 
 from camera import CameraThread
 
+# ── Configurações centralizadas ──────────────────────────────────────────────
+TARGET_FPS = 15                      # FPS alvo para o streaming
+FRAME_INTERVAL = 1.0 / TARGET_FPS   # Intervalo entre frames (~66ms para 15 FPS)
+JPEG_QUALITY = 60                    # Qualidade JPEG (0-100); 60 é bom custo-benefício
+ENCODE_PARAMS = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+MAX_TENTATIVAS = 3
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 class WebcamListener:
     def __init__(self):
@@ -30,27 +38,25 @@ class WebcamListener:
 async def buscar_servidor():
     zc = Zeroconf()
     listener = WebcamListener()
-    # Não funciona sem essa linha
-    browser = ServiceBrowser(zc, "_http._tcp.local.", listener)
+    browser = ServiceBrowser(zc, "_http._tcp.local.", listener)  # noqa: F841
 
     start_time = time.time()
     while not listener.found_uri and (time.time() - start_time) < 5:
         await asyncio.sleep(0.1)
 
-    zc.close()  # Fecha o radar após a busca
+    zc.close()
     return listener.found_uri
 
 
 async def transmitir_video():
     tentativas = 0
-    max_tentativas = 3
 
-    while tentativas < max_tentativas:
+    while tentativas < MAX_TENTATIVAS:
         uri = await buscar_servidor()
 
         if not uri:
             tentativas += 1
-            print(f"📡 Servidor não encontrado. Tentativa {tentativas}/{max_tentativas}")
+            print(f"📡 Servidor não encontrado. Tentativa {tentativas}/{MAX_TENTATIVAS}")
             await asyncio.sleep(2)
             continue
 
@@ -58,25 +64,33 @@ async def transmitir_video():
             print(f"🔗 Conectando ao servidor em: {uri}")
             async with websockets.connect(uri) as websocket:
                 tentativas = 0
-
-                cam = CameraThread(0).start()
-
+                cam = CameraThread(src=0, width=640, height=480, fps=TARGET_FPS).start()
                 print("🎥 Streaming iniciado! Pressione 'q' no servidor para encerrar.")
 
+                last_send = time.monotonic()
+
                 while not cam.stopped:
-                    ret, frame = cam.read()
+                    ret, frame = cam.read()  # Bloqueia até frame novo (sem duplicatas)
 
-                    if not ret: break
+                    if not ret:
+                        break
 
-                    _, buffer = cv2.imencode('.jpg', frame)
+                    # Controle de FPS: descarta o frame se chegou cedo demais
+                    now = time.monotonic()
+                    elapsed = now - last_send
+                    if elapsed < FRAME_INTERVAL:
+                        await asyncio.sleep(FRAME_INTERVAL - elapsed)
+
+                    # Codifica com qualidade reduzida
+                    _, buffer = cv2.imencode('.jpg', frame, ENCODE_PARAMS)
                     await websocket.send(buffer.tobytes())
-
-                    await asyncio.sleep(0.01)
+                    last_send = time.monotonic()
 
                 cam.release()
+
         except Exception as e:
             tentativas += 1
-            print(f"⚠️ Conexão perdida: {e}. Tentando reconectar ({tentativas}/{max_tentativas})...")
+            print(f"⚠️ Conexão perdida: {e}. Tentando reconectar ({tentativas}/{MAX_TENTATIVAS})...")
             await asyncio.sleep(3)
 
 
