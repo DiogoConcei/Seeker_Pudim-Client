@@ -1,46 +1,64 @@
 import RPi.GPIO as GPIO
 import time
 
-# Configuração para usar a numeração BCM (nomes lógicos dos GPIOs)
+# Usando a numeração BCM (lógica) do Raspberry Pi
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-# Pinos que você definiu
-IN1, IN2 = 17, 27
-IN3, IN4 = 22, 23
+# --- Configuração dos Pinos ---
+# Placa 1
+P1_IN1 = 17
+P1_IN2 = 27
+P1_IN3 = 22
+P1_IN4 = 23
 
-# Configurando os pinos como saída de energia (OUTPUT)
-GPIO.setup([IN1, IN2, IN3, IN4], GPIO.OUT)
+# Placa 2
+P2_IN1 = 24
+P2_IN2 = 25
+P2_IN3 = 5
+P2_IN4 = 6
 
-# Garantindo que tudo comece desligado
-GPIO.output([IN1, IN2, IN3, IN4], GPIO.LOW)
+# Agrupando tudo para facilitar o setup
+todos_pinos = [P1_IN1, P1_IN2, P1_IN3, P1_IN4, P2_IN1, P2_IN2, P2_IN3, P2_IN4]
 
-try:
-    print("Testando Motor 1 (Pinos 17 e 27)...")
-    # Para girar, um pino precisa ser HIGH (energia) e o outro LOW (sem energia)
-    GPIO.output(IN1, GPIO.HIGH)
-    GPIO.output(IN2, GPIO.LOW)
-    time.sleep(2)  # Mantém girando por 2 segundos
+# Define todos os pinos como SAÍDA e garante que comecem desligados (LOW)
+GPIO.setup(todos_pinos, GPIO.OUT)
+GPIO.output(todos_pinos, GPIO.LOW)
 
-    # Para o motor 1
-    GPIO.output(IN1, GPIO.LOW)
-    print("Motor 1 parado.")
+
+def testar_motor(nome, in_a, in_b):
+    print(f"Testando {nome}...")
+    GPIO.output(in_a, GPIO.HIGH)
+    GPIO.output(in_b, GPIO.LOW)
+    time.sleep(2)
+    GPIO.output(in_a, GPIO.LOW)  # Desliga
     time.sleep(1)
 
-    print("Testando Motor 2 (Pinos 22 e 23)...")
-    GPIO.output(IN3, GPIO.HIGH)
-    GPIO.output(IN4, GPIO.LOW)
-    time.sleep(2)  # Mantém girando por 2 segundos
 
-    # Para o motor 2
-    GPIO.output(IN3, GPIO.LOW)
-    print("Motor 2 parado.")
+try:
+    print("Iniciando Teste 4x4 do Robô...\n")
 
-    print("Teste finalizado com sucesso!")
+    # Testando a Placa 1
+    testar_motor("Placa 1 - Motor A (Verde/Amarelo)", P1_IN1, P1_IN2)
+    testar_motor("Placa 1 - Motor B (Laranja/Vermelho)", P1_IN3, P1_IN4)
+
+    # Testando a Placa 2
+    testar_motor("Placa 2 - Motor A (Branco/Marrom)", P2_IN1, P2_IN2)
+    testar_motor("Placa 2 - Motor B (Azul/Preto)", P2_IN3, P2_IN4)
+
+    print("\nTeste individual concluído! Girando todas as rodas juntas por 2 segundos...")
+    # Liga um lado de cada motor
+    GPIO.output([P1_IN1, P1_IN3, P2_IN1, P2_IN3], GPIO.HIGH)
+    time.sleep(2)
+
+    # Desliga tudo
+    GPIO.output(todos_pinos, GPIO.LOW)
+    print("Sucesso!")
 
 except KeyboardInterrupt:
-    print("\nTeste interrompido pelo usuário.")
+    print("\nTeste interrompido.")
 
 finally:
-    # Limpa as configurações das portas GPIO para evitar problemas no próximo uso
+    # Limpa as portas para evitar de deixar motores ligados acidentalmente
     GPIO.cleanup()
+    print("Pinos resetados.")
