@@ -55,38 +55,52 @@ class WebcamListener:
         self.A = 1
         self.B = 1
         self.C = 1
+        self.target_track_id = -1
 
     def handle_payload(self, payload: dict):
         detections = payload.get("detections", [])
-        if detections:
-            distancia = self.medir_distancia(detections)
-            self._agir(distancia)
-        else:
+        if not detections:
             self.motores.parar()
+            self.target_track_id = -1
+            return
 
-    def medir_distancia(self, bboxes):
-        maior = max(bboxes, key=lambda b: (b["x2"] - b["x1"]) * (b["y2"] - b["y1"]))
+        # Tenta encontrar o alvo atual ou escolhe o maior (mais próximo)
+        target = None
+        if self.target_track_id != -1:
+            target = next((d for d in detections if d["track_id"] == self.target_track_id), None)
+        
+        if target is None:
+            # Escolhe o objeto com a maior altura (mais confiável para proximidade)
+            target = max(detections, key=lambda b: b["y2"] - b["y1"])
+            self.target_track_id = target["track_id"]
 
-        x1, x2 = maior["x1"], maior["x2"]
-        y1, y2 = maior["y1"], maior["y2"]
+        distancia = self.medir_distancia(target)
+        velocidade = target.get("speed", 0)
+        self._agir(distancia, velocidade)
 
-        area_px = (x2 - x1) * (y2 - y1)
-        distcmt = self.A * area_px ** 2 + self.B * area_px + self.C
+    def medir_distancia(self, target):
+        x1 = target["x1"]
+        distancia_cm = target.get("distance_cm", 999)
 
         if x1 < self.config.largura * self.config.regiao_esquerda:
-            return 0
+            return 0  # Esquerda
         if x1 > self.config.largura * self.config.regiao_direita:
-            return -2
-        return int(distcmt)
+            return -2 # Direita
+        
+        return int(distancia_cm)
 
-    def _agir(self, distancia: int):
+    def _agir(self, distancia: int, velocidade: float):
         if distancia == 0:
+            print(f"🔄 GIRAR ESQUERDA | Alvo: {self.target_track_id}")
             self.motores.girar_esquerda()
         elif distancia == -2:
+            print(f"🔄 GIRAR DIREITA | Alvo: {self.target_track_id}")
             self.motores.girar_direita()
         elif distancia <= self.config.distancia_parada_cm:
+            print(f"🛑 PARAR | Dist: {distancia}cm <= {self.config.distancia_parada_cm}cm")
             self.motores.parar()
         else:
+            print(f"🚀 FRENTE | Dist: {distancia}cm | Vel: {velocidade}")
             self.motores.frente()
 
     async def receiver_loop(self, websocket, stop_event: asyncio.Event):
