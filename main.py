@@ -52,9 +52,6 @@ class WebcamListener:
         self.found_uri = None
         self.config = config
         self.motores = motores
-        self.A = 1
-        self.B = 1
-        self.C = 1
         self.target_track_id = -1
 
     def handle_payload(self, payload: dict):
@@ -80,7 +77,7 @@ class WebcamListener:
 
     def medir_distancia(self, target):
         x1 = target["x1"]
-        distancia_cm = target.get("distance_cm", 999)
+        distancia_cm = target.get("dist_m", 999)
 
         if x1 < self.config.largura * self.config.regiao_esquerda:
             return 0  # Esquerda
