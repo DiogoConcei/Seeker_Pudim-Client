@@ -30,9 +30,9 @@ Se os motores não giram ou giram para o lado errado, confira a fiação:
 3. PARÂMETROS DE COMPORTAMENTO (config.py)
 -------------------------------------------------------------------------------
 No arquivo `config.py`, você ajusta a "personalidade" e sensibilidade:
-- `distancia_parada_cm`: Distância mínima antes do robô parar (Segurança).
-- `regiao_esquerda` / `regiao_direita`: Define a largura das faixas laterais 
-  na imagem. Se o robô demora a girar, aumente essas margens.
+- `distancia_parada_cm`: 50 cm (Distância mínima de segurança).
+- `regiao_esquerda` (0.30) / `regiao_direita` (0.70): Define a janela central. 
+  Se o alvo sair desses limites, o robô gira.
 - `JPEG_QUALITY`: Se o vídeo estiver com lag (atraso), reduza para 40 ou 50.
 
 4. LÓGICA DE MOVIMENTO (O QUE ESPERAR)

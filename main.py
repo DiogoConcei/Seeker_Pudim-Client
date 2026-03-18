@@ -62,50 +62,61 @@ class WebcamListener:
 
         # Tenta encontrar o alvo atual ou escolhe o maior (mais próximo)
         target = None
-        if self.target_track_id != -1:
-            target = next((d for d in detections if d["track_id"] == self.target_track_id), None)
+        # Nota: Seu payload atual não envia track_id, então vamos focar no maior objeto por enquanto
+        target = max(detections, key=lambda b: b["y2"] - b["y1"])
+
+        distancia, acao = self.avaliar_navegacao(target)
+        self._agir(distancia, acao)
+
+    def avaliar_navegacao(self, target):
+        """Retorna (distancia_cm, acao) onde acao pode ser 'frente', 'esquerda', 'direita' ou 'parar'"""
+        erro_x = target.get("erro_x", 0)
+        distancia_cm = target.get("dist_cm", 999)
         
-        if target is None:
-            # Escolhe o objeto com a maior altura (mais confiável para proximidade)
-            target = max(detections, key=lambda b: b["y2"] - b["y1"])
-            self.target_track_id = target["track_id"]
+        # Define uma zona morta de 50 pixels para evitar oscilação
+        DEADZONE = 50 
 
-        distancia = self.medir_distancia(target)
-        velocidade = target.get("speed", 0)
-        self._agir(distancia, velocidade)
-
-    def medir_distancia(self, target):
-        x1 = target["x1"]
-        distancia_cm = target.get("dist_m", 999)
-
-        if x1 < self.config.largura * self.config.regiao_esquerda:
-            return 0  # Esquerda
-        if x1 > self.config.largura * self.config.regiao_direita:
-            return -2 # Direita
+        if erro_x < -DEADZONE:
+            return distancia_cm, "esquerda"
+        if erro_x > DEADZONE:
+            return distancia_cm, "direita"
         
-        return int(distancia_cm)
+        if distancia_cm <= self.config.distancia_parada_cm:
+            return distancia_cm, "parar"
+            
+        return distancia_cm, "frente"
 
-    def _agir(self, distancia: int, velocidade: float):
-        if distancia == 0:
-            print(f"🔄 GIRAR ESQUERDA | Alvo: {self.target_track_id}")
+    def _agir(self, distancia: int, acao: str, erro_x: float = 0):
+        if acao == "esquerda":
+            print(f"🔄 GIRAR ESQUERDA | ErroX: {erro_x:.1f}px")
             self.motores.girar_esquerda()
-        elif distancia == -2:
-            print(f"🔄 GIRAR DIREITA | Alvo: {self.target_track_id}")
+        elif acao == "direita":
+            print(f"🔄 GIRAR DIREITA | ErroX: {erro_x:.1f}px")
             self.motores.girar_direita()
-        elif distancia <= self.config.distancia_parada_cm:
+        elif acao == "parar":
             print(f"🛑 PARAR | Dist: {distancia}cm <= {self.config.distancia_parada_cm}cm")
             self.motores.parar()
         else:
-            print(f"🚀 FRENTE | Dist: {distancia}cm | Vel: {velocidade}")
+            print(f"🚀 FRENTE | Dist: {distancia}cm | ErroX: {erro_x:.1f}px")
             self.motores.frente()
 
     async def receiver_loop(self, websocket, stop_event: asyncio.Event):
+        # Timeout de segurança: Se não receber nada em 0.5s, para o robô
+        TIMEOUT_SEGURANCA = 0.5
+        
         while not stop_event.is_set():
             try:
-                message = await websocket.recv()
+                # Espera por uma mensagem com timeout
+                message = await asyncio.wait_for(websocket.recv(), timeout=TIMEOUT_SEGURANCA)
                 payload = json.loads(message)
                 self.handle_payload(payload)
-            except Exception:
+            except asyncio.TimeoutError:
+                # Se demorar muito, para por segurança
+                print("⚠️ TIMEOUT: Parando robô por falta de dados...")
+                self.motores.parar()
+            except Exception as e:
+                print(f"❌ Erro no receptor: {e}")
+                self.motores.parar()
                 stop_event.set()
                 break
 
