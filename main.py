@@ -12,8 +12,7 @@ from config import ConfiguracaoCamera
 from motores import ControleMotores
 
 # ── Configurações centralizadas ──────────────────────────────────────────────
-TARGET_FPS = 15
-FRAME_INTERVAL = 1.0 / TARGET_FPS
+FRAME_INTERVAL = 1.0 / 15
 JPEG_QUALITY = 60
 ENCODE_PARAMS = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
 MAX_TENTATIVAS = 3
