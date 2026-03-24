@@ -146,7 +146,7 @@ async def transmitir_video():
                     src=0,
                     width=config.largura,
                     height=config.altura,
-                    fps=TARGET_FPS
+                    fps=config.fps
                 ).start()
                 stop_event = asyncio.Event()
 
