@@ -12,8 +12,7 @@ from config import ConfiguracaoCamera
 from motores import ControleMotores
 
 # ── Configurações centralizadas ──────────────────────────────────────────────
-TARGET_FPS = 15
-FRAME_INTERVAL = 1.0 / TARGET_FPS
+FRAME_INTERVAL = 1.0 / 15
 JPEG_QUALITY = 60
 ENCODE_PARAMS = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
 MAX_TENTATIVAS = 3
@@ -52,50 +51,72 @@ class WebcamListener:
         self.found_uri = None
         self.config = config
         self.motores = motores
-        self.A = 1
-        self.B = 1
-        self.C = 1
+        self.target_track_id = -1
 
     def handle_payload(self, payload: dict):
         detections = payload.get("detections", [])
-        if detections:
-            distancia = self.medir_distancia(detections)
-            self._agir(distancia)
-        else:
+        if not detections:
             self.motores.parar()
+            self.target_track_id = -1
+            return
 
-    def medir_distancia(self, bboxes):
-        maior = max(bboxes, key=lambda b: (b["x2"] - b["x1"]) * (b["y2"] - b["y1"]))
+        # Tenta encontrar o alvo atual ou escolhe o maior (mais próximo)
+        target = None
+        # Nota: Seu payload atual não envia track_id, então vamos focar no maior objeto por enquanto
+        target = max(detections, key=lambda b: b["y2"] - b["y1"])
 
-        x1, x2 = maior["x1"], maior["x2"]
-        y1, y2 = maior["y1"], maior["y2"]
+        distancia, acao = self.avaliar_navegacao(target)
+        self._agir(distancia, acao)
 
-        area_px = (x2 - x1) * (y2 - y1)
-        distcmt = self.A * area_px ** 2 + self.B * area_px + self.C
+    def avaliar_navegacao(self, target):
+        """Retorna (distancia_cm, acao) onde acao pode ser 'frente', 'esquerda', 'direita' ou 'parar'"""
+        erro_x = target.get("erro_x", 0)
+        distancia_cm = target.get("dist_cm", 999)
+        
+        # Define uma zona morta de 50 pixels para evitar oscilação
+        DEADZONE = 50 
 
-        if x1 < self.config.largura * self.config.regiao_esquerda:
-            return 0
-        if x1 > self.config.largura * self.config.regiao_direita:
-            return -2
-        return int(distcmt)
+        if erro_x < -DEADZONE:
+            return distancia_cm, "esquerda"
+        if erro_x > DEADZONE:
+            return distancia_cm, "direita"
+        
+        if distancia_cm <= self.config.distancia_parada_cm:
+            return distancia_cm, "parar"
+            
+        return distancia_cm, "frente"
 
-    def _agir(self, distancia: int):
-        if distancia == 0:
+    def _agir(self, distancia: int, acao: str, erro_x: float = 0):
+        if acao == "esquerda":
+            print(f"🔄 GIRAR ESQUERDA | ErroX: {erro_x:.1f}px")
             self.motores.girar_esquerda()
-        elif distancia == -2:
+        elif acao == "direita":
+            print(f"🔄 GIRAR DIREITA | ErroX: {erro_x:.1f}px")
             self.motores.girar_direita()
-        elif distancia <= self.config.distancia_parada_cm:
+        elif acao == "parar":
+            print(f"🛑 PARAR | Dist: {distancia}cm <= {self.config.distancia_parada_cm}cm")
             self.motores.parar()
         else:
+            print(f"🚀 FRENTE | Dist: {distancia}cm | ErroX: {erro_x:.1f}px")
             self.motores.frente()
 
     async def receiver_loop(self, websocket, stop_event: asyncio.Event):
+        # Timeout de segurança: Se não receber nada em 0.5s, para o robô
+        TIMEOUT_SEGURANCA = 0.5
+        
         while not stop_event.is_set():
             try:
-                message = await websocket.recv()
+                # Espera por uma mensagem com timeout
+                message = await asyncio.wait_for(websocket.recv(), timeout=TIMEOUT_SEGURANCA)
                 payload = json.loads(message)
                 self.handle_payload(payload)
-            except Exception:
+            except asyncio.TimeoutError:
+                # Se demorar muito, para por segurança
+                print("⚠️ TIMEOUT: Parando robô por falta de dados...")
+                self.motores.parar()
+            except Exception as e:
+                print(f"❌ Erro no receptor: {e}")
+                self.motores.parar()
                 stop_event.set()
                 break
 

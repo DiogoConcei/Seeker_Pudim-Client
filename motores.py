@@ -1,17 +1,31 @@
-import RPi.GPIO as GPIO
+try:
+    import RPi.GPIO as GPIO
+except (ImportError, RuntimeError):
+    # Mock para rodar no PC sem erro
+    class GPIO_Mock:
+        BCM = 'BCM'
+        OUT = 'OUT'
+        LOW = 0
+        HIGH = 1
+        def setmode(self, *args, **kwargs): pass
+        def setwarnings(self, *args, **kwargs): pass
+        def setup(self, *args, **kwargs): pass
+        def output(self, *args, **kwargs): pass
+        def cleanup(self, *args, **kwargs): pass
+    GPIO = GPIO_Mock()
 
 class ControleMotores:
     # Placa 1 — lado ESQUERDO
-    _P1_IN1 = 17
-    _P1_IN2 = 27
-    _P1_IN3 = 22
-    _P1_IN4 = 23
+    _P1_IN1 = 5
+    _P1_IN2 = 6
+    _P1_IN3 = 12
+    _P1_IN4 = 13
 
     # Placa 2 — lado DIREITO
-    _P2_IN1 = 24
-    _P2_IN2 = 25
-    _P2_IN3 = 5
-    _P2_IN4 = 6
+    _P2_IN1 = 22
+    _P2_IN2 = 23
+    _P2_IN3 = 24
+    _P2_IN4 = 25
 
     def __init__(self):
         GPIO.setmode(GPIO.BCM)

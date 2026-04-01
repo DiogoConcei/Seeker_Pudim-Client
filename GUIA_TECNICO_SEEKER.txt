@@ -1,0 +1,68 @@
+===============================================================================
+           🛠️ GUIA TÉCNICO E DIAGNÓSTICO - PUDIM MODERNO (SEEKER) 🛠️
+===============================================================================
+
+Este guia foca na infraestrutura técnica para garantir que o robô funcione. Se 
+ele não está se movendo, siga este checklist.
+
+1. INFRAESTRUTURA DE REDE (ZEROCONF & WEBSOCKETS)
+-------------------------------------------------------------------------------
+O Seeker não processa a IA localmente; ele envia vídeo para um servidor.
+- Servidor: Deve estar rodando o serviço que recebe os frames (Websocket).
+- Descoberta: O robô usa Zeroconf (`_http._tcp.local.`) para achar o IP do 
+  servidor automaticamente. Se o robô não conectar:
+  * Verifique se ambos estão na mesma rede Wi-Fi.
+  * O servidor deve estar anunciando o serviço corretamente.
+
+2. MAPEAMENTO DE PINOS (GPIO - RASPBERRY PI)
+-------------------------------------------------------------------------------
+Se os motores não giram ou giram para o lado errado, confira a fiação:
+
+[LADO ESQUERDO - Placa 1]        [LADO DIREITO - Placa 2]
+- GPIO 17 (IN1)                  - GPIO 24 (IN1)
+- GPIO 27 (IN2)                  - GPIO 25 (IN2)
+- GPIO 22 (IN3)                  - GPIO 5  (IN3)
+- GPIO 23 (IN4)                  - GPIO 6  (IN4)
+
+* Nota: O código usa `GPIO.BCM`. Verifique se os fios estão nos pinos BCM 
+  corretos, não na ordem física da régua.
+
+3. PARÂMETROS DE COMPORTAMENTO (config.py)
+-------------------------------------------------------------------------------
+No arquivo `config.py`, você ajusta a "personalidade" e sensibilidade:
+- `distancia_parada_cm`: 50 cm (Distância mínima de segurança).
+- `regiao_esquerda` (0.30) / `regiao_direita` (0.70): Define a janela central. 
+  Se o alvo sair desses limites, o robô gira.
+- `JPEG_QUALITY`: Se o vídeo estiver com lag (atraso), reduza para 40 ou 50.
+
+4. LÓGICA DE MOVIMENTO (O QUE ESPERAR)
+-------------------------------------------------------------------------------
+O robô só se move se a função `handle_payload` receber detecções:
+1. Sem detecção? -> `motores.parar()` (Totalmente estático).
+-------------------------------------------------------------------------------
+2. Viu alguém? -> Seleciona o alvo com maior altura (`y2 - y1`).
+-------------------------------------------------------------------------------
+3. Alvo no canto X < Margem Esquerda? -> `girar_esquerda()`.
+4. Alvo no canto X > Margem Direita? -> `girar_direita()`.
+5. Alvo centralizado e Distância > Parada? -> `frente()`.
+
+5. COMANDOS DE INICIALIZAÇÃO
+-------------------------------------------------------------------------------
+1. Ligue o servidor de IA/Processamento.
+2. No robô, execute: `python main.py`.
+3. Observe o log: 
+   - "🔄 GIRAR": Robô detectou e está alinhando.
+   - "🚀 FRENTE": Robô está perseguindo.
+   - "🛑 PARAR": Objeto muito próximo ou alvo perdido.
+
+6. POSSÍVEIS FALHAS E SOLUÇÕES
+-------------------------------------------------------------------------------
+- ERRO DE CONEXÃO: Verifique se o firewall do computador (servidor) está 
+  bloqueando a porta do Websocket.
+- MOVIMENTO FRACO: A Raspberry Pi não aguenta alimentar 4/8 motores sozinha. 
+  Use uma fonte de alimentação externa (Bateria Lipo/Pilhas) para a Ponte-H.
+- IA NÃO DETECTA: Verifique se o arquivo `yolov8n.pt` está presente no servidor.
+
+-------------------------------------------------------------------------------
+Documentação técnica gerada para referência rápida em: 18/03/2026
+===============================================================================
