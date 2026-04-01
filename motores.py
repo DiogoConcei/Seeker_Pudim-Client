@@ -16,16 +16,16 @@ except (ImportError, RuntimeError):
 
 class ControleMotores:
     # Placa 1 — lado ESQUERDO
-    _P1_IN1 = 17
-    _P1_IN2 = 27
-    _P1_IN3 = 22
-    _P1_IN4 = 23
+    _P1_IN1 = 5
+    _P1_IN2 = 6
+    _P1_IN3 = 12
+    _P1_IN4 = 13
 
     # Placa 2 — lado DIREITO
-    _P2_IN1 = 24
-    _P2_IN2 = 25
-    _P2_IN3 = 5
-    _P2_IN4 = 6
+    _P2_IN1 = 22
+    _P2_IN2 = 23
+    _P2_IN3 = 24
+    _P2_IN4 = 25
 
     def __init__(self):
         GPIO.setmode(GPIO.BCM)
