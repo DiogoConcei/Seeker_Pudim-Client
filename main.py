@@ -60,33 +60,31 @@ class WebcamListener:
             self.target_track_id = -1
             return
 
-        # Tenta encontrar o alvo atual ou escolhe o maior (mais próximo)
-        target = None
-        # Nota: Seu payload atual não envia track_id, então vamos focar no maior objeto por enquanto
-        target = max(detections, key=lambda b: b["y2"] - b["y1"])
+        # Seleciona o alvo com maior área (mais próximo/confiável)
+        target = max(detections, key=lambda b: (b["x2"] - b["x1"]) * (b["y2"] - b["y1"]))
 
-        distancia, acao = self.avaliar_navegacao(target)
-        self._agir(distancia, acao)
+        distancia, acao, erro_x = self.avaliar_navegacao(target)
+        self._agir(distancia, acao, erro_x)
 
     def avaliar_navegacao(self, target):
-        """Retorna (distancia_cm, acao) onde acao pode ser 'frente', 'esquerda', 'direita' ou 'parar'"""
+        """Retorna (distancia_cm, acao, erro_x)"""
         erro_x = target.get("erro_x", 0)
         distancia_cm = target.get("dist_cm", 999)
         
-        # Define uma zona morta de 50 pixels para evitar oscilação
-        DEADZONE = 50 
-
-        if erro_x < -DEADZONE:
-            return distancia_cm, "esquerda"
-        if erro_x > DEADZONE:
-            return distancia_cm, "direita"
-        
+        # Prioridade 1: Segurança (Parar se estiver muito perto)
         if distancia_cm <= self.config.distancia_parada_cm:
-            return distancia_cm, "parar"
+            return distancia_cm, "parar", erro_x
             
-        return distancia_cm, "frente"
+        # Prioridade 2: Correção de Direção (Deadzone de 50 pixels)
+        DEADZONE = 50 
+        if erro_x < -DEADZONE:
+            return distancia_cm, "esquerda", erro_x
+        if erro_x > DEADZONE:
+            return distancia_cm, "direita", erro_x
+        
+        return distancia_cm, "frente", erro_x
 
-    def _agir(self, distancia: int, acao: str, erro_x: float = 0):
+    def _agir(self, distancia: int, acao: str, erro_x: float):
         if acao == "esquerda":
             print(f"🔄 GIRAR ESQUERDA | ErroX: {erro_x:.1f}px")
             self.motores.girar_esquerda()
