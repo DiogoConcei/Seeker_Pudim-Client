@@ -60,8 +60,8 @@ class WebcamListener:
             self.target_track_id = -1
             return
 
-        # Seleciona o alvo com maior área (mais próximo/confiável)
-        target = max(detections, key=lambda b: (b["x2"] - b["x1"]) * (b["y2"] - b["y1"]))
+        # Seleciona o alvo com maior altura (mais alto/próximo)
+        target = max(detections, key=lambda b: b["y2"] - b["y1"])
 
         distancia, acao, erro_x = self.avaliar_navegacao(target)
         self._agir(distancia, acao, erro_x)
